@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose:*)",
+      "Bash(npm run:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx playwright:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": []
+  }
+}

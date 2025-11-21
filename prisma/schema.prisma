@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      UserRole @default(USER)
+  invoiceSystem InvoiceSystem @default(NORMAL)
+  companyInfo Json? // Store company details for invoice templates
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients  Client[]
+  invoices Invoice[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum InvoiceSystem {
+  NORMAL
+  TUNISIAN
+}
+
+model Client {
+  id          String  @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  city        String?
+  postalCode  String?
+  country     String?
+  taxId       String?
+  customFields Json?
+
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoices  Invoice[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("clients")
+}
+
+model Currency {
+  id       String @id @default(cuid())
+  code     String @unique
+  name     String
+  symbol   String
+  isActive Boolean @default(true)
+
+  invoices      Invoice[]
+  exchangeRates ExchangeRate[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("currencies")
+}
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Decimal  @db.Decimal(10, 6)
+  date         DateTime @default(now())
+
+  currency Currency @relation(fields: [fromCurrency], references: [code])
+  createdAt DateTime @default(now())
+
+  @@unique([fromCurrency, toCurrency, date])
+  @@map("exchange_rates")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  number         String        @unique
+  status         InvoiceStatus @default(DRAFT)
+  issueDate      DateTime      @default(now())
+  dueDate        DateTime?
+  subtotal       Decimal       @db.Decimal(10, 2)
+  taxAmount      Decimal       @db.Decimal(10, 2) @default(0)
+  discountAmount Decimal       @db.Decimal(10, 2) @default(0)
+  total          Decimal       @db.Decimal(10, 2)
+  notes          String?
+  customFields   Json?
+  
+  // Tunisian-specific fields
+  timbreAmount   Decimal?      @db.Decimal(10, 2) // Timbre fiscal amount
+  tvaNumber      String?       // TVA number for Tunisia
+  mfNumber       String?       // Matricule fiscal number
+
+  clientId   String
+  client     Client    @relation(fields: [clientId], references: [id])
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  currencyId String
+  currency   Currency  @relation(fields: [currencyId], references: [id])
+  items      InvoiceItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+  taxRate     Decimal @db.Decimal(5, 2) @default(0)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invoice_items")
+}
+
+model CustomField {
+  id          String          @id @default(cuid())
+  name        String
+  label       String
+  type        CustomFieldType
+  required    Boolean         @default(false)
+  options     Json?
+  defaultValue String?
+  entityType  EntityType
+  country     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, entityType, country])
+  @@map("custom_fields")
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  TEXTAREA
+  EMAIL
+  PHONE
+}
+
+enum EntityType {
+  CLIENT
+  INVOICE
+  INVOICE_ITEM
+}
