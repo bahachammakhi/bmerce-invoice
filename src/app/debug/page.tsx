@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 export default function DebugPage() {
   const { data: session, status } = useSession();
   const { data: sessionDebug, error } = api.debug.getSession.useQuery();
-  const { data: clients } = api.client.getAll.useQuery();
+  const { data: clients } = api.clients.getAll.useQuery();
 
   return (
     <div className="p-8">

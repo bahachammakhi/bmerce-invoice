@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/trpc';
@@ -33,27 +33,35 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const resolvedParams = use(params);
-  const { data: client, isLoading } = api.client.getById.useQuery({ id: resolvedParams.id });
-  const updateClientMutation = api.client.update.useMutation();
+  const { data: client, isLoading } = api.clients.getById.useQuery({ id: resolvedParams.id });
+  const updateClientMutation = api.clients.update.useMutation();
 
   const {
     register,
     handleSubmit,
     setValue,
+    reset,
+    watch,
     formState: { errors },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
-    defaultValues: client ? {
-      name: client.name,
-      email: client.email || '',
-      phone: client.phone || '',
-      address: client.address || '',
-      city: client.city || '',
-      postalCode: client.postalCode || '',
-      country: client.country || '',
-      taxId: client.taxId || '',
-    } : undefined,
   });
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reset form when client data loads
+  useEffect(() => {
+    if (client) {
+      reset({
+        name: client.name,
+        email: client.email || '',
+        phone: client.phone || '',
+        address: client.address || '',
+        city: client.city || '',
+        postalCode: client.postalCode || '',
+        country: client.country || '',
+        taxId: client.taxId || '',
+      });
+    }
+  }, [client?.id, reset]);
 
   const onSubmit = async (data: ClientFormData) => {
     setIsSubmitting(true);
@@ -196,8 +204,8 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
 
                   <div className="space-y-2">
                     <Label htmlFor="country">Country</Label>
-                    <Select 
-                      value={client.country || ''} 
+                    <Select
+                      value={watch('country') || ''}
                       onValueChange={(value) => setValue('country', value)}
                     >
                       <SelectTrigger>
@@ -210,6 +218,7 @@ export default function EditClientPage({ params }: { params: Promise<{ id: strin
                         <SelectItem value="DE">Germany</SelectItem>
                         <SelectItem value="GB">United Kingdom</SelectItem>
                         <SelectItem value="CA">Canada</SelectItem>
+                        <SelectItem value="IS">Iceland</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

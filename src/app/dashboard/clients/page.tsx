@@ -15,13 +15,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import Link from 'next/link';
-import { Trash2, Edit, Plus } from 'lucide-react';
+import { Trash2, Edit, Plus, Eye } from 'lucide-react';
 
 export default function ClientsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { data: clients, isLoading, refetch } = api.client.getAll.useQuery();
-  const deleteClient = api.client.delete.useMutation({
+  const { data: clients, isLoading, refetch } = api.clients.getAll.useQuery();
+  const deleteClient = api.clients.delete.useMutation({
     onSuccess: () => {
       refetch();
     },
@@ -105,6 +105,15 @@ export default function ClientsPage() {
                         <TableCell>{client.country || '-'}</TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              asChild
+                            >
+                              <Link href={`/dashboard/clients/${client.id}`}>
+                                <Eye className="w-4 h-4" />
+                              </Link>
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

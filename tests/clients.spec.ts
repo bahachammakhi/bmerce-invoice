@@ -10,8 +10,8 @@ test.describe('Client Management', () => {
     await expect(page).toHaveURL('/dashboard');
     
     // Navigate to clients page
-    await page.click('a[href="/clients"], nav a:has-text("Clients")');
-    await expect(page).toHaveURL('/clients');
+    await page.click('a[href="/dashboard/clients"], nav a:has-text("Clients")');
+    await expect(page).toHaveURL('/dashboard/clients');
   });
 
   test('should display clients list', async ({ page }) => {
@@ -54,7 +54,7 @@ test.describe('Client Management', () => {
     await page.click('button[type="submit"]:has-text("Save"), button:has-text("Create")');
     
     // Should redirect back to clients list
-    await expect(page).toHaveURL('/clients');
+    await expect(page).toHaveURL('/dashboard/clients');
     
     // Should show success message and new client
     await expect(page.locator('text=Test Client Company')).toBeVisible();
@@ -84,7 +84,7 @@ test.describe('Client Management', () => {
     await page.click('button[type="submit"]:has-text("Save"), button:has-text("Update")');
     
     // Should redirect back to clients list
-    await expect(page).toHaveURL('/clients');
+    await expect(page).toHaveURL('/dashboard/clients');
     
     // Should show updated client name
     await expect(page.locator('text=Acme Corporation Updated')).toBeVisible();

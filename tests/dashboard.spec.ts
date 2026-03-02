@@ -64,16 +64,16 @@ test.describe('Dashboard & Analytics', () => {
 
   test('should navigate to other sections from dashboard', async ({ page }) => {
     // Click on clients link/button
-    await page.click('a[href="/clients"], button:has-text("View Clients"), text=View All Clients');
-    await expect(page).toHaveURL('/clients');
+    await page.click('a[href="/dashboard/clients"], button:has-text("View Clients"), text=View All Clients');
+    await expect(page).toHaveURL('/dashboard/clients');
     
     // Go back to dashboard
     await page.click('a[href="/dashboard"], nav a:has-text("Dashboard")');
     await expect(page).toHaveURL('/dashboard');
     
     // Click on invoices link/button
-    await page.click('a[href="/invoices"], button:has-text("View Invoices"), text=View All Invoices');
-    await expect(page).toHaveURL('/invoices');
+    await page.click('a[href="/dashboard/invoices"], button:has-text("View Invoices"), text=View All Invoices');
+    await expect(page).toHaveURL('/dashboard/invoices');
   });
 
   test('should display currency breakdown', async ({ page }) => {

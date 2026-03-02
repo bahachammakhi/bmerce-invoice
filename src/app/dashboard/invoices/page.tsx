@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/trpc';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,18 +15,44 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import Link from 'next/link';
-import { Trash2, Edit, Plus, Eye } from 'lucide-react';
+import { Trash2, Edit, Plus, Eye, Copy, Filter } from 'lucide-react';
 import { InvoiceStatus } from '@/generated/prisma';
 
 export default function InvoicesPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
   const invoicesQuery = api.invoice.getAll.useQuery();
-  const invoices = invoicesQuery.data;
+  const allInvoices = invoicesQuery.data;
   const isLoading = invoicesQuery.isLoading;
   const refetch = invoicesQuery.refetch;
   const deleteInvoiceMutation = api.invoice.delete.useMutation();
+  const { data: clients } = api.clients.getAll.useQuery();
+
+  // Filter invoices
+  const invoices = allInvoices?.filter((invoice: any) => {
+    // Status filter
+    if (statusFilter !== 'ALL' && invoice.status !== statusFilter) {
+      return false;
+    }
+
+    // Search filter (invoice number or client name)
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesNumber = invoice.number.toLowerCase().includes(query);
+      const matchesClient = invoice.client.name.toLowerCase().includes(query);
+      return matchesNumber || matchesClient;
+    }
+
+    return true;
+  });
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -120,13 +146,22 @@ export default function InvoicesPage() {
                       <TableHead>Client</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Due Date</TableHead>
-                      <TableHead>Total</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {!isLoading && invoices ? invoices.map((invoice: any) => (
+                    {!isLoading && invoices ? invoices.map((invoice: any) => {
+                      const total = Number(invoice.total);
+                      const paid = Number(invoice.amountPaid);
+                      const balance = total - paid;
+                      const isTND = invoice.currency.code === 'TND';
+                      const decimals = isTND ? 3 : 2;
+
+                      return (
                       <TableRow key={invoice.id}>
                         <TableCell className="font-medium">{invoice.number}</TableCell>
                         <TableCell>{invoice.client.name}</TableCell>
@@ -134,8 +169,14 @@ export default function InvoicesPage() {
                         <TableCell>
                           {invoice.dueDate ? formatDate(new Date(invoice.dueDate)) : '-'}
                         </TableCell>
-                        <TableCell>
-                          {formatCurrency(Number(invoice.total), invoice.currency.symbol)}
+                        <TableCell className="text-right">
+                          {invoice.currency.symbol}{total.toFixed(decimals)}
+                        </TableCell>
+                        <TableCell className="text-right text-green-600">
+                          {paid > 0 ? `${invoice.currency.symbol}${paid.toFixed(decimals)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {balance > 0 ? `${invoice.currency.symbol}${balance.toFixed(decimals)}` : '-'}
                         </TableCell>
                         <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                         <TableCell>
@@ -169,7 +210,8 @@ export default function InvoicesPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    )) : null}
+                      );
+                    }) : null}
                   </TableBody>
                 </Table>
               ) : (

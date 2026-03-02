@@ -16,11 +16,14 @@ model User {
   role      UserRole @default(USER)
   invoiceSystem InvoiceSystem @default(NORMAL)
   companyInfo Json? // Store company details for invoice templates
+  bankDetails Json? // Store bank account details (RIB, IBAN, SWIFT)
+  baseCurrencyId String? // Foreign key to Currency for reporting currency
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   clients  Client[]
   invoices Invoice[]
+  baseCurrency Currency? @relation("UserBaseCurrency", fields: [baseCurrencyId], references: [id])
 
   @@map("users")
 }
@@ -65,6 +68,7 @@ model Currency {
 
   invoices      Invoice[]
   exchangeRates ExchangeRate[]
+  usersWithBaseCurrency User[] @relation("UserBaseCurrency")
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -82,6 +86,8 @@ model ExchangeRate {
   createdAt DateTime @default(now())
 
   @@unique([fromCurrency, toCurrency, date])
+  @@index([fromCurrency, toCurrency])
+  @@index([date])
   @@map("exchange_rates")
 }
 
@@ -91,17 +97,22 @@ model Invoice {
   status         InvoiceStatus @default(DRAFT)
   issueDate      DateTime      @default(now())
   dueDate        DateTime?
-  subtotal       Decimal       @db.Decimal(10, 2)
-  taxAmount      Decimal       @db.Decimal(10, 2) @default(0)
-  discountAmount Decimal       @db.Decimal(10, 2) @default(0)
-  total          Decimal       @db.Decimal(10, 2)
+  subtotal       Decimal       @db.Decimal(10, 3)
+  taxAmount      Decimal       @db.Decimal(10, 3) @default(0)
+  discountAmount Decimal       @db.Decimal(10, 3) @default(0)
+  total          Decimal       @db.Decimal(10, 3)
   notes          String?
   customFields   Json?
   
   // Tunisian-specific fields
-  timbreAmount   Decimal?      @db.Decimal(10, 2) // Timbre fiscal amount
+  timbreAmount   Decimal?      @db.Decimal(10, 3) // Timbre fiscal amount
   tvaNumber      String?       // TVA number for Tunisia
   mfNumber       String?       // Matricule fiscal number
+  
+  // Tax Compliance & International
+  withholdingTax  Decimal      @db.Decimal(10, 3) @default(0) // Retenue à la source
+  isTaxExempt     Boolean      @default(false)
+  exemptionReason String?      // Required if isTaxExempt is true
 
   clientId   String
   client     Client    @relation(fields: [clientId], references: [id])
@@ -110,6 +121,16 @@ model Invoice {
   currencyId String
   currency   Currency  @relation(fields: [currencyId], references: [id])
   items      InvoiceItem[]
+
+  // Payment tracking
+  amountPaid Decimal   @db.Decimal(10, 3) @default(0)
+  paidAt     DateTime?
+  payments   Payment[]
+
+  // Currency conversion tracking
+  originalCurrencyId String?
+  conversionRate     Decimal?           @db.Decimal(10, 6)
+  conversions        CurrencyConversion[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -125,12 +146,20 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+enum PaymentMethod {
+  BANK_TRANSFER
+  CHECK
+  CASH
+  CREDIT_CARD
+  OTHER
+}
+
 model InvoiceItem {
   id          String  @id @default(cuid())
   description String
-  quantity    Decimal @db.Decimal(10, 2)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
+  quantity    Decimal @db.Decimal(10, 3)
+  unitPrice   Decimal @db.Decimal(10, 3)
+  total       Decimal @db.Decimal(10, 3)
   taxRate     Decimal @db.Decimal(5, 2) @default(0)
 
   invoiceId String
@@ -140,6 +169,51 @@ model InvoiceItem {
   updatedAt DateTime @updatedAt
 
   @@map("invoice_items")
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  amount      Decimal       @db.Decimal(10, 3)
+  paymentDate DateTime      @default(now())
+  method      PaymentMethod @default(BANK_TRANSFER)
+  reference   String?
+  notes       String?
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payments")
+}
+
+model ExchangeRateHistory {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Decimal  @db.Decimal(10, 6)
+  source       String   // "API", "MANUAL", "SCHEDULED"
+  fetchedAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([fromCurrency, toCurrency, fetchedAt])
+  @@map("exchange_rate_history")
+}
+
+model CurrencyConversion {
+  id               String   @id @default(cuid())
+  originalCurrency String
+  originalAmount   Decimal  @db.Decimal(10, 3)
+  targetCurrency   String
+  targetAmount     Decimal  @db.Decimal(10, 3)
+  exchangeRate     Decimal  @db.Decimal(10, 6)
+  convertedAt      DateTime @default(now())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("currency_conversions")
 }
 
 model CustomField {

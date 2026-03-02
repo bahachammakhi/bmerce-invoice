@@ -6,15 +6,17 @@ import { analyticsRouter } from '@/server/api/routers/analytics';
 import { customFieldsRouter } from '@/server/api/routers/custom-fields';
 import { debugRouter } from '@/server/api/routers/debug';
 import { userRouter } from '@/server/api/routers/user';
+import { paymentRouter } from '@/server/api/routers/payment';
 
 export const appRouter = createTRPCRouter({
-  client: clientRouter,
+  clients: clientRouter,
   invoice: invoiceRouter,
   currency: currencyRouter,
   analytics: analyticsRouter,
   customFields: customFieldsRouter,
   debug: debugRouter,
   user: userRouter,
+  payment: paymentRouter,
 });
 
 export type AppRouter = typeof appRouter;

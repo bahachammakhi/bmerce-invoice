@@ -40,9 +40,6 @@ export async function validateInvoiceNumber(db: PrismaClient, number: string, us
 }
 
 export function formatInvoiceNumber(number: string): string {
-  // Ensure the invoice number has proper formatting
-  if (!number.startsWith('INV-')) {
-    return `INV-${number}`;
-  }
+  // Return the number exactly as the user entered it — no prefix added
   return number;
 }

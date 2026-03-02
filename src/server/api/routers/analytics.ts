@@ -1,10 +1,19 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/api/trpc';
 import { InvoiceStatus } from '@/generated/prisma';
+import { ExchangeRateService } from '@/lib/exchange-rates';
 
 export const analyticsRouter = createTRPCRouter({
   getDashboardStats: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
+
+    // Get user's base currency for normalization
+    const user = await ctx.db.user.findUnique({
+      where: { id: userId },
+      include: { baseCurrency: true },
+    });
+
+    const baseCurrency = user?.baseCurrency?.code || 'USD';
 
     const [
       totalInvoices,
@@ -12,8 +21,8 @@ export const analyticsRouter = createTRPCRouter({
       pendingInvoices,
       paidInvoices,
       overdueInvoices,
-      totalRevenue,
-      pendingRevenue,
+      paidInvoicesData,
+      pendingInvoicesData,
     ] = await Promise.all([
       ctx.db.invoice.count({
         where: { userId },
@@ -30,18 +39,45 @@ export const analyticsRouter = createTRPCRouter({
       ctx.db.invoice.count({
         where: { userId, status: InvoiceStatus.OVERDUE },
       }),
-      ctx.db.invoice.aggregate({
+      // Fetch all paid invoices with currency info for conversion
+      ctx.db.invoice.findMany({
         where: { userId, status: InvoiceStatus.PAID },
-        _sum: { total: true },
+        select: { total: true, currency: { select: { code: true } } },
       }),
-      ctx.db.invoice.aggregate({
-        where: { 
-          userId, 
+      // Fetch all pending invoices with currency info for conversion
+      ctx.db.invoice.findMany({
+        where: {
+          userId,
           status: { in: [InvoiceStatus.SENT, InvoiceStatus.OVERDUE] }
         },
-        _sum: { total: true },
+        select: { total: true, currency: { select: { code: true } } },
       }),
     ]);
+
+    // Convert all revenues to base currency
+    let totalRevenue = 0;
+    for (const invoice of paidInvoicesData) {
+      const amount = Number(invoice.total);
+      const converted = await ExchangeRateService.convertWithDB(
+        amount,
+        invoice.currency.code,
+        baseCurrency,
+        ctx.db
+      );
+      totalRevenue += converted;
+    }
+
+    let pendingRevenue = 0;
+    for (const invoice of pendingInvoicesData) {
+      const amount = Number(invoice.total);
+      const converted = await ExchangeRateService.convertWithDB(
+        amount,
+        invoice.currency.code,
+        baseCurrency,
+        ctx.db
+      );
+      pendingRevenue += converted;
+    }
 
     return {
       totalInvoices,
@@ -49,13 +85,14 @@ export const analyticsRouter = createTRPCRouter({
       pendingInvoices,
       paidInvoices,
       overdueInvoices,
-      totalRevenue: Number(totalRevenue._sum.total || 0),
-      pendingRevenue: Number(pendingRevenue._sum.total || 0),
+      totalRevenue,
+      pendingRevenue,
+      baseCurrency, // Include base currency in response
     };
   }),
 
   getRevenueByMonth: protectedProcedure
-    .input(z.object({ 
+    .input(z.object({
       year: z.number().optional(),
       currencyCode: z.string().optional(),
     }))
@@ -64,6 +101,14 @@ export const analyticsRouter = createTRPCRouter({
       const year = input.year || new Date().getFullYear();
       const startDate = new Date(year, 0, 1);
       const endDate = new Date(year + 1, 0, 1);
+
+      // Get user's base currency
+      const user = await ctx.db.user.findUnique({
+        where: { id: userId },
+        include: { baseCurrency: true },
+      });
+
+      const baseCurrency = user?.baseCurrency?.code || 'USD';
 
       const invoices = await ctx.db.invoice.findMany({
         where: {
@@ -90,13 +135,21 @@ export const analyticsRouter = createTRPCRouter({
         invoiceCount: 0,
       }));
 
-      invoices.forEach(invoice => {
+      // Convert each invoice to base currency before summing
+      for (const invoice of invoices) {
         const month = invoice.issueDate.getMonth();
-        monthlyRevenue[month].revenue += Number(invoice.total);
+        const amount = Number(invoice.total);
+        const converted = await ExchangeRateService.convertWithDB(
+          amount,
+          invoice.currency.code,
+          baseCurrency,
+          ctx.db
+        );
+        monthlyRevenue[month].revenue += converted;
         monthlyRevenue[month].invoiceCount += 1;
-      });
+      }
 
-      return monthlyRevenue;
+      return { monthlyRevenue, baseCurrency };
     }),
 
   getTopClients: protectedProcedure
@@ -104,49 +157,107 @@ export const analyticsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
 
+      // Get user's base currency
+      const user = await ctx.db.user.findUnique({
+        where: { id: userId },
+        include: { baseCurrency: true },
+      });
+
+      const baseCurrency = user?.baseCurrency?.code || 'USD';
+
       const clients = await ctx.db.client.findMany({
         where: { userId },
         include: {
           invoices: {
             where: { status: InvoiceStatus.PAID },
-            select: { total: true },
+            select: { total: true, currency: { select: { code: true } } },
           },
         },
       });
 
-      const clientStats = clients
-        .map(client => ({
-          id: client.id,
-          name: client.name,
-          email: client.email,
-          totalRevenue: client.invoices.reduce(
-            (sum, invoice) => sum + Number(invoice.total),
-            0
-          ),
-          invoiceCount: client.invoices.length,
-        }))
+      // Convert revenues to base currency for each client
+      const clientStats = await Promise.all(
+        clients.map(async (client) => {
+          let totalRevenue = 0;
+          for (const invoice of client.invoices) {
+            const amount = Number(invoice.total);
+            const converted = await ExchangeRateService.convertWithDB(
+              amount,
+              invoice.currency.code,
+              baseCurrency,
+              ctx.db
+            );
+            totalRevenue += converted;
+          }
+
+          return {
+            id: client.id,
+            name: client.name,
+            email: client.email,
+            totalRevenue,
+            invoiceCount: client.invoices.length,
+          };
+        })
+      );
+
+      const topClients = clientStats
         .filter(client => client.totalRevenue > 0)
         .sort((a, b) => b.totalRevenue - a.totalRevenue)
         .slice(0, input.limit);
 
-      return clientStats;
+      return { clients: topClients, baseCurrency };
     }),
 
   getInvoiceStatusDistribution: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
-    const statusCounts = await ctx.db.invoice.groupBy({
-      by: ['status'],
-      where: { userId },
-      _count: { status: true },
-      _sum: { total: true },
+    // Get user's base currency
+    const user = await ctx.db.user.findUnique({
+      where: { id: userId },
+      include: { baseCurrency: true },
     });
 
-    return statusCounts.map(item => ({
-      status: item.status,
-      count: item._count.status,
-      totalAmount: Number(item._sum.total || 0),
+    const baseCurrency = user?.baseCurrency?.code || 'USD';
+
+    // Get all invoices grouped by status with currency info
+    const invoicesByStatus = await ctx.db.invoice.findMany({
+      where: { userId },
+      select: {
+        status: true,
+        total: true,
+        currency: { select: { code: true } },
+      },
+    });
+
+    // Group and convert amounts by status
+    const statusMap = new Map<string, { count: number; totalAmount: number }>();
+
+    for (const invoice of invoicesByStatus) {
+      const status = invoice.status;
+      const amount = Number(invoice.total);
+      const converted = await ExchangeRateService.convertWithDB(
+        amount,
+        invoice.currency.code,
+        baseCurrency,
+        ctx.db
+      );
+
+      if (!statusMap.has(status)) {
+        statusMap.set(status, { count: 0, totalAmount: 0 });
+      }
+
+      const stat = statusMap.get(status)!;
+      stat.count += 1;
+      stat.totalAmount += converted;
+    }
+
+    const distribution = Array.from(statusMap.entries()).map(([status, data]) => ({
+      status,
+      count: data.count,
+      totalAmount: data.totalAmount,
     }));
+
+    return { distribution, baseCurrency };
   }),
 
   getCurrencyBreakdown: protectedProcedure.query(async ({ ctx }) => {

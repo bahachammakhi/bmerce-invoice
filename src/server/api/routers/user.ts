@@ -17,11 +17,19 @@ const companyInfoSchema = z.object({
   mfNumber: z.string().optional(),
 });
 
+const bankDetailsSchema = z.object({
+  bankName: z.string().optional(),
+  accountNumber: z.string().optional(),
+  iban: z.string().optional(),
+  swift: z.string().optional(),
+  rib: z.string().optional(), // Tunisian RIB
+});
+
 export const userRouter = createTRPCRouter({
   getSettings: protectedProcedure.query(async ({ ctx }) => {
     console.log('=== USER.GETSETTINGS START ===');
     console.log('User ID:', ctx.session.user.id);
-    
+
     const result = await ctx.db.user.findUnique({
       where: {
         id: ctx.session.user.id,
@@ -29,9 +37,20 @@ export const userRouter = createTRPCRouter({
       select: {
         invoiceSystem: true,
         companyInfo: true,
+        bankDetails: true,
+        baseCurrencyId: true,
+        baseCurrency: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            symbol: true,
+          },
+        },
+        updatedAt: true,
       },
     });
-    
+
     console.log('getSettings result:', JSON.stringify(result, null, 2));
     console.log('=== USER.GETSETTINGS END ===');
     return result;
@@ -42,6 +61,8 @@ export const userRouter = createTRPCRouter({
       z.object({
         invoiceSystem: z.nativeEnum(InvoiceSystem),
         companyInfo: companyInfoSchema,
+        bankDetails: bankDetailsSchema.optional(),
+        baseCurrencyId: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -50,7 +71,9 @@ export const userRouter = createTRPCRouter({
       console.log('Input invoice system:', input.invoiceSystem);
       console.log('Input invoice system type:', typeof input.invoiceSystem);
       console.log('Input company info:', JSON.stringify(input.companyInfo, null, 2));
-      
+      console.log('Input bank details:', JSON.stringify(input.bankDetails, null, 2));
+      console.log('Input base currency ID:', input.baseCurrencyId);
+
       const result = await ctx.db.user.update({
         where: {
           id: ctx.session.user.id,
@@ -58,9 +81,11 @@ export const userRouter = createTRPCRouter({
         data: {
           invoiceSystem: input.invoiceSystem,
           companyInfo: input.companyInfo,
+          bankDetails: input.bankDetails,
+          baseCurrencyId: input.baseCurrencyId,
         },
       });
-      
+
       console.log('updateSettings result:', JSON.stringify(result, null, 2));
       console.log('=== USER.UPDATESETTINGS END ===');
       return result;

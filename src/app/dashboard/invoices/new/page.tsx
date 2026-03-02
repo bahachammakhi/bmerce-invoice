@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -26,9 +27,15 @@ const invoiceSchema = z.object({
   clientId: z.string().min(1, 'Client is required'),
   currencyId: z.string().min(1, 'Currency is required'),
   number: z.string().optional(),
+  issueDate: z.string().optional(),
   dueDate: z.string().optional(),
   notes: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, 'At least one item is required'),
+  // New fields
+  isTaxExempt: z.boolean().optional(),
+  exemptionReason: z.string().optional(),
+  withholdingTax: z.number().min(0).optional(),
+  timbreAmount: z.number().min(0).optional(),
 });
 
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
@@ -38,7 +45,7 @@ export default function NewInvoicePage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: clients } = api.client.getAll.useQuery();
+  const { data: clients } = api.clients.getAll.useQuery();
   const { data: currencies } = api.currency.getAll.useQuery();
   const { data: nextInvoiceNumber } = api.invoice.getNextNumber.useQuery();
   
@@ -54,7 +61,11 @@ export default function NewInvoicePage() {
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
+      issueDate: new Date().toISOString().split('T')[0],
       items: [{ description: '', quantity: 1, unitPrice: 0, taxRate: 0 }],
+      isTaxExempt: false,
+      withholdingTax: 0,
+      timbreAmount: 1.000, // Default timbre for Tunisia
     },
   });
 
@@ -64,6 +75,14 @@ export default function NewInvoicePage() {
   });
 
   const watchedItems = watch('items');
+  const isTaxExempt = watch('isTaxExempt');
+  const withholdingTax = watch('withholdingTax') || 0;
+  const timbreAmount = watch('timbreAmount') || 0;
+  const currencyId = watch('currencyId');
+
+  const selectedCurrency = currencies?.find(c => c.id === currencyId);
+  const isTND = selectedCurrency?.code === 'TND';
+  const decimalPlaces = isTND ? 3 : 2;
 
   const calculateSubtotal = () => {
     return watchedItems.reduce((sum, item) => {
@@ -74,6 +93,7 @@ export default function NewInvoicePage() {
   };
 
   const calculateTax = () => {
+    if (isTaxExempt) return 0;
     return watchedItems.reduce((sum, item) => {
       const quantity = Number(item.quantity) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
@@ -84,7 +104,11 @@ export default function NewInvoicePage() {
   };
 
   const calculateTotal = () => {
-    return calculateSubtotal() + calculateTax();
+    const subtotal = calculateSubtotal();
+    const tax = calculateTax();
+    const timbre = isTaxExempt ? 0 : (Number(timbreAmount) || 0);
+    const withholding = Number(withholdingTax) || 0;
+    return subtotal + tax + timbre - withholding;
   };
 
   const onSubmit = async (data: InvoiceFormData) => {
@@ -101,9 +125,14 @@ export default function NewInvoicePage() {
         clientId: data.clientId,
         currencyId: data.currencyId,
         number: data.number,
+        issueDate: data.issueDate ? new Date(data.issueDate) : undefined,
         dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         notes: data.notes,
         items,
+        isTaxExempt: data.isTaxExempt,
+        exemptionReason: data.exemptionReason,
+        withholdingTax: Number(data.withholdingTax),
+        timbreAmount: Number(data.timbreAmount),
       });
       router.push('/dashboard/invoices');
     } catch (error) {
@@ -219,12 +248,66 @@ export default function NewInvoicePage() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="issueDate">Invoice Date</Label>
+                    <Input
+                      id="issueDate"
+                      type="date"
+                      {...register('issueDate')}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="dueDate">Due Date</Label>
                     <Input
                       id="dueDate"
                       type="date"
                       {...register('dueDate')}
                     />
+                  </div>
+                </div>
+
+                {/* Tax Compliance Section */}
+                <div className="border p-4 rounded-md space-y-4 bg-gray-50">
+                  <h3 className="font-medium">Tax & Compliance</h3>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="isTaxExempt"
+                      {...register('isTaxExempt')}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="isTaxExempt">Tax Exempt (Exonéré de TVA)</Label>
+                  </div>
+
+                  {isTaxExempt && (
+                    <div className="space-y-2">
+                      <Label htmlFor="exemptionReason">Exemption Reason</Label>
+                      <Input
+                        id="exemptionReason"
+                        {...register('exemptionReason')}
+                        placeholder="e.g., Export, Article X..."
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="timbreAmount">Timbre Fiscal</Label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        {...register('timbreAmount', { valueAsNumber: true })}
+                        disabled={isTaxExempt}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="withholdingTax">Withholding Tax (Retenue à la source)</Label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        {...register('withholdingTax', { valueAsNumber: true })}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -272,7 +355,7 @@ export default function NewInvoicePage() {
                             <Label htmlFor={`items.${index}.unitPrice`}>Unit Price</Label>
                             <Input
                               type="number"
-                              step="0.01"
+                              step={isTND ? "0.001" : "0.01"}
                               {...register(`items.${index}.unitPrice`, { valueAsNumber: true })}
                               placeholder="0.00"
                             />
@@ -285,6 +368,7 @@ export default function NewInvoicePage() {
                               step="0.01"
                               {...register(`items.${index}.taxRate`, { valueAsNumber: true })}
                               placeholder="0"
+                              disabled={isTaxExempt}
                             />
                           </div>
 
@@ -312,7 +396,7 @@ export default function NewInvoicePage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="notes">Notes</Label>
-                  <Input
+                  <Textarea
                     id="notes"
                     {...register('notes')}
                     placeholder="Additional notes..."
@@ -323,15 +407,27 @@ export default function NewInvoicePage() {
                   <div className="text-right space-y-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>${calculateSubtotal().toFixed(2)}</span>
+                      <span>{selectedCurrency?.symbol}{calculateSubtotal().toFixed(decimalPlaces)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax:</span>
-                      <span>${calculateTax().toFixed(2)}</span>
+                      <span>{selectedCurrency?.symbol}{calculateTax().toFixed(decimalPlaces)}</span>
                     </div>
+                    {!isTaxExempt && Number(timbreAmount) > 0 && (
+                      <div className="flex justify-between">
+                        <span>Timbre Fiscal:</span>
+                        <span>{selectedCurrency?.symbol}{Number(timbreAmount).toFixed(decimalPlaces)}</span>
+                      </div>
+                    )}
+                    {Number(withholdingTax) > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Withholding Tax:</span>
+                        <span>-{selectedCurrency?.symbol}{Number(withholdingTax).toFixed(decimalPlaces)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold text-lg">
                       <span>Total:</span>
-                      <span>${calculateTotal().toFixed(2)}</span>
+                      <span>{selectedCurrency?.symbol}{calculateTotal().toFixed(decimalPlaces)}</span>
                     </div>
                   </div>
                 </div>

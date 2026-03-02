@@ -32,7 +32,7 @@ export default function NewClientPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const createClientMutation = api.client.create.useMutation();
+  const createClientMutation = api.clients.create.useMutation();
 
   const {
     register,
@@ -186,6 +186,7 @@ export default function NewClientPage() {
                         <SelectItem value="DE">Germany</SelectItem>
                         <SelectItem value="GB">United Kingdom</SelectItem>
                         <SelectItem value="CA">Canada</SelectItem>
+                        <SelectItem value="IS">Iceland</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -36,10 +36,12 @@ export default function Dashboard() {
     return null;
   }
 
+  const baseCurrency = stats?.baseCurrency || 'USD';
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: baseCurrency,
     }).format(amount);
   };
 
@@ -52,6 +54,11 @@ export default function Dashboard() {
           <p className="text-muted-foreground">
             Welcome back, {session.user.name}! Here&apos;s what&apos;s happening with your business.
           </p>
+          {stats && (
+            <p className="text-sm text-muted-foreground mt-1">
+              All amounts shown in {baseCurrency}
+            </p>
+          )}
         </div>
       </div>
 
@@ -167,9 +174,9 @@ export default function Dashboard() {
             <CardDescription>Clients by total revenue</CardDescription>
           </CardHeader>
           <CardContent>
-            {topClients && topClients.length > 0 ? (
+            {topClients?.clients && topClients.clients.length > 0 ? (
               <div className="space-y-4">
-                {topClients.map((client, index) => (
+                {topClients.clients.map((client, index) => (
                   <div key={client.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0">

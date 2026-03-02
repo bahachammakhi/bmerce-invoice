@@ -11,7 +11,9 @@
       "Bash(npm run:*)",
       "Bash(npx tsx:*)",
       "Bash(npx playwright:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(npm test)"
     ],
     "deny": []
   }
